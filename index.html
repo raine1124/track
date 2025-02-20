@@ -7,6 +7,21 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <div id="loading-screen" class="loading-screen">
+        <svg id="loading-text" viewBox="0 0 600 200">
+            <!-- Background text (outline) -->
+            <text class="text-outline" x="50%" y="50%" text-anchor="middle" dominant-baseline="middle">
+                Homara
+            </text>
+            <!-- Filled text that will be revealed -->
+            <text class="text-fill" x="50%" y="50%" text-anchor="middle" dominant-baseline="middle">
+                Homara
+            </text>
+            <!-- Mask for the filling effect -->
+            <rect class="fill-mask" x="0" y="200" width="600" height="200" fill="white" />
+        </svg>
+        <div class="loading-percentage">0%</div>
+    </div>
     <div id="image-track" data-mouse-down-at="0" data-prev-percentage="0">
         <div class="image-container">
             <img class="image" src="images/brain map.png" draggable="false" />
