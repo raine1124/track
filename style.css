@@ -1,0 +1,63 @@
+body {
+    height: 100vh;
+    width: 100vw;
+    background-color: rgb(15, 14, 14);
+    margin: 0rem;
+    overflow: hidden;
+  }
+  
+  #image-track {
+    display: flex;
+    gap: 4vmin;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(0%, -50%); 
+    user-select: none; /* -- Prevent image highlighting -- */
+  }
+  
+  .image-container {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1vmin;
+}
+
+.view-button {
+    position: relative;
+    background: radial-gradient(circle at center, rgba(0, 0, 0, 0.5) 0%, rgba(26, 24, 24, 0.8) 100%);
+    color: rgb(255, 255, 255);
+    padding: 12px 28px;
+    text-decoration: none;
+    border-radius: 25px;
+    font-family: Arial, sans-serif;
+    font-weight: bold;
+    text-transform: uppercase;
+    font-size: 14px;
+    letter-spacing: 1px;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    backdrop-filter: blur(5px);
+}
+
+.view-button:hover {
+    transform: scale(1.05);
+    background: radial-gradient(circle at center, rgb(68, 68, 68) 0%, rgba(20, 19, 19, 0.9) 100%);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+}
+
+.view-button:active {
+    transform: scale(0.98);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+}
+
+  #image-track > .image-container > .image {
+    width: 80vmin;
+    height: 56vmin;
+    object-fit: cover;
+    object-position: 100% center;
+  }
+
+
+ 
