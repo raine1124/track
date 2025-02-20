@@ -1,11 +1,21 @@
 document.addEventListener('DOMContentLoaded', () => {
+  // Check if animation has already played this session
+  if (sessionStorage.getItem('animationPlayed')) {
+      // If animation has played, hide loading screen and show content immediately
+      const loadingScreen = document.getElementById('loading-screen');
+      const imageTrack = document.getElementById('image-track');
+      
+      loadingScreen.style.display = 'none';
+      imageTrack.classList.add('visible');
+      return;
+  }
+
   const loadingScreen = document.getElementById('loading-screen');
-  const fillMask = document.querySelector('.fill-mask');
-  const loadingPercentage = document.querySelector('.loading-percentage');
+  const fillRect = document.querySelector('.fill-rect');
   const imageTrack = document.getElementById('image-track');
   
   let progress = 0;
-  const duration = 2000; // 2 seconds
+  const duration = 3000; // 3 seconds
   const startTime = Date.now();
 
   function updateLoader() {
@@ -15,35 +25,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Calculate mask position (move from bottom to top)
       const maskPosition = 200 - (progress * 2); // 200 is SVG height
-      fillMask.setAttribute('y', maskPosition);
-      
-      loadingPercentage.textContent = `${Math.round(progress)}%`;
+      fillRect.setAttribute('y', maskPosition);
 
       if (progress < 100) {
           requestAnimationFrame(updateLoader);
       } else {
+          // Mark animation as played in this session
+          sessionStorage.setItem('animationPlayed', 'true');
+          
+          loadingScreen.classList.add('fade-out');
+          imageTrack.classList.add('visible');
+          
           setTimeout(() => {
-              loadingScreen.classList.add('fade-out');
-              imageTrack.classList.add('visible');
-              
-              setTimeout(() => {
-                  loadingScreen.style.display = 'none';
-              }, 500);
+              loadingScreen.style.display = 'none';
           }, 500);
       }
   }
-
-  // Add clip path to SVG
-  const svg = document.getElementById('loading-text');
-  const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
-  const clipPath = document.createElementNS("http://www.w3.org/2000/svg", "clipPath");
-  clipPath.setAttribute("id", "fill-clip");
-  
-  // Clone the mask rect into the clip path
-  const maskClone = fillMask.cloneNode(true);
-  clipPath.appendChild(maskClone);
-  defs.appendChild(clipPath);
-  svg.insertBefore(defs, svg.firstChild);
 
   // Start the animation
   requestAnimationFrame(updateLoader);
