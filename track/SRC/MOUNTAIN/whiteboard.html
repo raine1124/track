@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Realistic Tulip Flower</title>
+    <style>
+        body { margin: 0; background-color: black; overflow: hidden; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <script type="module">
+        import * as THREE from 'https://unpkg.com/three@0.159.0/build/three.module.js';
+
+        let scene, camera, renderer, flowerPoints;
+
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            // Create the tulip flower with points
+            flowerPoints = createRealisticTulip();
+
+            // Add points to scene
+            scene.add(flowerPoints);
+
+            camera.position.z = 10;
+
+            // Handle mouse movement for rotation
+            let mouseX = 0, mouseY = 0;
+            let targetRotationX = 0, targetRotationY = 0;
+            let isMouseDown = false;
+
+            document.addEventListener('mousedown', () => isMouseDown = true);
+            document.addEventListener('mousemove', (event) => {
+                if (isMouseDown) {
+                    mouseX = event.clientX - window.innerWidth / 2;
+                    mouseY = event.clientY - window.innerHeight / 2;
+                    targetRotationX = mouseX * 0.002;
+                    targetRotationY = mouseY * 0.002;
+                }
+            });
+            document.addEventListener('mouseup', () => isMouseDown = false);
+
+            animate();
+        }
+
+        function createRealisticTulip() {
+            const geometry = new THREE.BufferGeometry();
+            const positions = [];
+            const colors = [];
+
+            // Create the petals (6 petals with some curvature)
+            const petalCount = 6;
+            const petalWidth = 1.2;
+            const petalHeight = 2;
+            for (let i = 0; i < petalCount; i++) {
+                const angle = (i / petalCount) * Math.PI * 2;
+                const x = petalWidth * Math.cos(angle);
+                const y = petalHeight + Math.random() * 0.3;  // Variation in height for realism
+                const z = petalWidth * Math.sin(angle);
+
+                // Slight curve to the petals
+                const curve = Math.sin(angle) * 0.2;
+                positions.push(x + curve, y, z);
+                colors.push(1, 0, 0);  // Red color for petals
+            }
+
+            // Create the stem (tapered shape, 100 points)
+            const stemCount = 100;
+            for (let i = 0; i < stemCount; i++) {
+                const x = 0;
+                const y = -i * 0.1;  // Increased detail in the stem by using 100 points
+                const z = 0;
+                const color = (i < 40) ? 0x00ff00 : 0x008000; // Change color of stem bottom to top (green variation)
+
+                positions.push(x, y, z);
+                colors.push(color / 255, color / 255, color / 255);  // Green color for stem
+            }
+
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+            const material = new THREE.PointsMaterial({
+                size: 0.1,
+                vertexColors: true,
+                sizeAttenuation: true
+            });
+
+            return new THREE.Points(geometry, material);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            flowerPoints.rotation.x += 0.01;
+            flowerPoints.rotation.y += 0.01;
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        init();
+    </script>
+</body>
+</html>

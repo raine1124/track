@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Slideable Track</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="loading-screen" class="loading-screen">
+        <svg id="loading-text" viewBox="0 0 600 200">
+            <!-- Background text (outline) -->
+            <text class="text-outline" x="300" y="100" text-anchor="middle" dominant-baseline="middle">
+                Homara
+            </text>
+            
+            <!-- Create a mask for the filling effect -->
+            <defs>
+                <mask id="text-mask">
+                    <text class="text-mask" x="300" y="100" text-anchor="middle" dominant-baseline="middle" fill="white">
+                        Homara
+                    </text>
+                </mask>
+            </defs>
+            
+            <!-- Rectangle that will be masked by the text -->
+            <rect class="fill-rect" x="0" y="200" width="600" height="200" fill="white" mask="url(#text-mask)"/>
+        </svg>
+    </div>
+    <div id="image-track" data-mouse-down-at="0" data-prev-percentage="0">
+        <div class="image-container">
+            <img class="image" src="images/brain map.png" draggable="false" />
+            <a href="SRC/BRAIN/brain.html" class="view-button">View</a>
+        </div>
+            <div class="image-container">
+                <img class="image" src="images/heartbetter.png" draggable="false" />
+                <a href="" class="view-button">View</a>
+            </div>
+            <div class="image-container">
+                <img class="image" src="images/mountain.png" draggable="false" />
+                <a href="SRC/MOUNTAIN/mountain.html" class="view-button">View</a>
+            </div>
+            <div class="image-container">
+                <img class="image" src="images/pinetreebasic.jpg" draggable="false" />
+                <a href="SRC/TREE/tree.html" class="view-button">View</a>
+            </div>
+        <img class="image" src="" draggable="false" />
+        <img class="image" src="" draggable="false" />
+        <img class="image" src="" draggable="false" />
+        <img class="image" src="" draggable="false" />
+    </div>
+    <script src="SRC/main.js"></script>
+</body>
+</html>
