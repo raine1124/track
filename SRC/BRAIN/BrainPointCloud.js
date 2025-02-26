@@ -17,7 +17,7 @@ const redPointIndices = [];
 
 function createCircularText() {
     const circle = document.getElementById('textCircle');
-    const text = 'Homara '.repeat(8);
+    const text = 'Brain '.repeat(8);
     const radius = 33;
     const textElement = document.createElement('div');
     textElement.className = 'menu-text';
