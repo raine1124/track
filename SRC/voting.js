@@ -43,10 +43,21 @@ document.addEventListener('DOMContentLoaded', function() {
             
             if (data.ok) {
                 // Success
-                formMessage.textContent = 'Email and Vote Recieved, Thank You.';
+                formMessage.textContent = 'Email and Vote Received, Thank You.';
+                formMessage.classList.remove('fade-out'); // Ensure the message is visible
                 form.reset();
                 voteButtons.forEach(btn => btn.classList.remove('selected'));
                 selectedOption = null;
+
+                // Fade out the message after 3 seconds
+                setTimeout(() => {
+                    formMessage.classList.add('fade-out');
+                    // Remove the message from the DOM after the fade-out transition completes
+                    setTimeout(() => {
+                        formMessage.textContent = '';
+                        formMessage.classList.remove('fade-out');
+                    }, 1000); // Wait for the fade-out transition to complete (1 second)
+                }, 3000); // 3000 milliseconds = 3 seconds
             } else {
                 // Error from Formspree
                 formMessage.textContent = 'There was an error submitting the form. Please try again.';
