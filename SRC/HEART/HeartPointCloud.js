@@ -97,22 +97,58 @@ function setupMenu() {
     }
   }
 
+  function resetToMainScreen() {
+    console.log("Home button clicked, attempting navigation");
+    
+    // Try multiple approaches to navigate
+    try {
+        // Option 1: Direct window location change
+        window.location.href = "../../index.html";
+        
+        // Option 2: If option 1 fails, try absolute path
+        setTimeout(() => {
+            console.log("Trying absolute path...");
+            window.location = "file:///D:/HomaraDemoTrack/index.html";
+        }, 500);
+    } catch (error) {
+        console.error("Navigation error:", error);
+        alert("Could not navigate to home page. Check console for details.");
+    }
+}
+
   document.getElementById("radialMenu").addEventListener("click", toggleMenu)
 
-  document.querySelectorAll(".menu-option").forEach((option) => {
-    option.addEventListener("click", (e) => {
-      e.preventDefault()
-      e.stopPropagation()
-      const action = e.target.dataset.action
-      console.log("Selected action:", action)
-
-      if (action === "reset") {
-        resetView()
-      }
-
-      toggleMenu(e)
-    })
-  })
+   document.querySelectorAll('.menu-option').forEach((option) => {
+          option.addEventListener('click', (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const action = e.target.dataset.action;
+              console.log('Selected action:', action);
+      
+              if (action === 'reset') {
+                  new TWEEN.Tween(camera.position)
+                      .to({ x: 0, y: 0, z: 10 }, 1000)
+                      .easing(TWEEN.Easing.Quadratic.InOut)
+                      .start();
+      
+                  new TWEEN.Tween(cameraTarget)
+                      .to({ x: 0, y: 0, z: 0 }, 1000)
+                      .easing(TWEEN.Easing.Quadratic.InOut)
+                      .onUpdate(() => camera.lookAt(cameraTarget))
+                      .start();
+      
+                  new TWEEN.Tween(pointCloud.rotation)
+                      .to({ x: 0, y: 0, z: 0 }, 1000)
+                      .easing(TWEEN.Easing.Quadratic.InOut)
+                      .start();
+                  } else if (action === 'home') {
+                      console.log('Home action detected'); // Debug log
+                      resetToMainScreen(); // Call the function to reset to the main screen
+                  }
+                  
+                  toggleMenu(e);
+              });
+          });
 
   document.addEventListener("click", (e) => {
     const menu = document.getElementById("radialMenu")
