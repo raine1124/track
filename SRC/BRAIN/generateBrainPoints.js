@@ -1,96 +1,17 @@
 import * as THREE from 'three';
 
-function createNeuronPath(startPoint, branchCount = 3, depth = 4) {
-    const points = [];
-    const colors = [];
+function brainShape(u, v, scale = 1) {
+    const a = 3.0 * scale;
+    const b = 3.5 * scale;
+    const c = 2.5 * scale;
 
-    function branch(start, direction, length, width, currentDepth) {
-        if (currentDepth <= 0) return;
-
-        const end = start.clone().add(direction.multiplyScalar(length));
-        
-        // Create points along the branch
-        const pointCount = Math.floor(length * 20);
-        for (let i = 0; i < pointCount; i++) {
-            const t = i / pointCount;
-            const pos = new THREE.Vector3().lerpVectors(start, end, t);
-            
-            // Add some natural variation
-            pos.x += (Math.random() - 0.5) * width;
-            pos.y += (Math.random() - 0.5) * width;
-            pos.z += (Math.random() - 0.5) * width;
-
-            // Ensure the point is within the brain shape
-            const brainRadius = 3.5;
-            if (pos.length() > brainRadius) {
-                pos.normalize().multiplyScalar(brainRadius);
-            }
-
-            points.push(pos);
-
-            // Color variation based on depth
-            const color = new THREE.Color();
-            const hue = 0.3 + (Math.random() * 0.1); // Green-yellow range
-            const saturation = 0.5 + (Math.random() * 0.2);
-            const lightness = 0.5 + (currentDepth / depth) * 0.3;
-            color.setHSL(hue, saturation, lightness);
-            colors.push(color);
-        }
-
-        // Create sub-branches
-        const subBranches = Math.floor(Math.random() * 2) + 2;
-        for (let i = 0; i < subBranches; i++) {
-            const newDirection = new THREE.Vector3(
-                direction.x + (Math.random() - 0.5),
-                direction.y + (Math.random() - 0.5),
-                direction.z + (Math.random() - 0.5)
-            ).normalize();
-
-            branch(
-                end.clone(),
-                newDirection,
-                length * 0.7,
-                width * 0.7,
-                currentDepth - 1
-            );
-        }
-    }
-
-    // Create initial branches
-    for (let i = 0; i < branchCount; i++) {
-        const direction = new THREE.Vector3(
-            Math.random() - 0.5,
-            Math.random() - 0.5,
-            Math.random() - 0.5
-        ).normalize();
-
-        branch(
-            startPoint.clone(),
-            direction,
-            1.0,
-            0.1,
-            depth
-        );
-    }
-
-    return { points, colors };
-}
-
-function brainShape(u, v) {
-    // Increased base shape parameters
-    const a = 3.0; // Width (increased from 2.5)
-    const b = 3.5; // Height (increased from 3)
-    const c = 2.5; // Depth (increased from 2)
-
-    // Create the basic ellipsoid shape
     let x = a * Math.sin(u) * Math.cos(v);
     let y = b * Math.sin(u) * Math.sin(v);
     let z = c * Math.cos(u);
 
-    // Add cortex folding effect
-    const foldingScale = 0.35; // Slightly increased from 0.3
+    const foldingScale = 0.35 * scale;
     const foldingFreq = 8;
-    
+
     x += foldingScale * Math.sin(foldingFreq * u) * Math.cos(foldingFreq * v);
     y += foldingScale * Math.sin(foldingFreq * u + Math.PI/4) * Math.sin(foldingFreq * v);
     z += foldingScale * Math.cos(foldingFreq * u) * Math.sin(foldingFreq * v);
@@ -98,77 +19,133 @@ function brainShape(u, v) {
     return new THREE.Vector3(x, y, z);
 }
 
+function isInsideBrainShape(point, scale = 1) {
+    // Convert point to spherical coordinates
+    const radius = point.length();
+    if (radius === 0) return true; // Center point is always inside
+
+    const theta = Math.acos(point.z / radius);
+    const phi = Math.atan2(point.y, point.x);
+
+    // Get the brain surface point at these angles
+    const surfacePoint = brainShape(theta, phi, scale);
+    const surfaceRadius = surfacePoint.length();
+
+    // Point is inside if its radius is less than the surface radius at that angle
+    return radius <= surfaceRadius * 0.9; // 0.9 to keep slightly inside the surface
+}
+
+function createNeuralPathway(brainScale) {
+    const points = [];
+    const colors = [];
+    
+    const start = new THREE.Vector3(0, 0, 0);
+    
+    function createBranch(origin, direction, remainingDepth, branchLength) {
+        if (remainingDepth <= 0) return;
+        
+        const steps = 20;
+        let currentPoint = origin.clone();
+        
+        for (let i = 0; i < steps; i++) {
+            const curve = new THREE.Vector3(
+                (Math.random() - 0.5) * 0.2,
+                (Math.random() - 0.5) * 0.2,
+                (Math.random() - 0.5) * 0.2
+            );
+            direction.add(curve).normalize();
+            
+            const nextPoint = currentPoint.clone().add(
+                direction.clone().multiplyScalar(branchLength / steps)
+            );
+            
+            if (isInsideBrainShape(nextPoint, brainScale)) {
+                points.push(nextPoint.clone());
+                
+                // New white/gray coloring
+                const color = new THREE.Color();
+                const hue = 0; // Neutral for white/gray
+                const saturation = 0; // No saturation for white/gray
+                const lightness = 1 + Math.random() * 0.5; // Ranges from mid-gray to white
+                color.setHSL(hue, saturation, lightness);
+                colors.push(color);
+                
+                currentPoint = nextPoint;
+                
+                if (i > 0 && i % 5 === 0 && remainingDepth > 1) {
+                    const subBranches = 1 + Math.floor(Math.random() * 2);
+                    for (let j = 0; j < subBranches; j++) {
+                        const newDirection = direction.clone()
+                            .add(new THREE.Vector3(
+                                Math.random() - 0.5,
+                                Math.random() - 0.5,
+                                Math.random() - 0.5
+                            ))
+                            .normalize();
+                        
+                        createBranch(
+                            currentPoint.clone(),
+                            newDirection,
+                            remainingDepth - 1,
+                            branchLength * 0.7
+                        );
+                    }
+                }
+            }
+        }
+    }
+    
+    const initialBranches = 12;
+    for (let i = 0; i < initialBranches; i++) {
+        const u = (Math.random() * Math.PI);
+        const v = (Math.random() * Math.PI * 2);
+        
+        const targetPoint = brainShape(u, v, brainScale * 0.8);
+        const direction = targetPoint.clone().normalize();
+        
+        createBranch(
+            start,
+            direction,
+            4,
+            targetPoint.length()
+        );
+    }
+    
+    return { points, colors };
+}
+
 export function generateBrainPoints(totalPoints) {
     const points = [];
     const colors = [];
 
-    // Generate base brain structure points
-    const structurePoints = Math.floor(totalPoints * 0.3);
+    const brainScale = 1;
+
+    // Increased density for brain surface structure
+    const structurePoints = Math.floor(totalPoints * 0.4); // Increased from 0.3
     for (let i = 0; i < structurePoints; i++) {
         const u = Math.random() * Math.PI;
         const v = Math.random() * Math.PI * 2;
+        const point = brainShape(u, v, brainScale);
         
-        const point = brainShape(u, v);
-        
-        // Add some randomness
-        point.x += (Math.random() - 0.5) * 0.1;
-        point.y += (Math.random() - 0.5) * 0.1;
-        point.z += (Math.random() - 0.5) * 0.1;
-
-        // Only add points if they're in the visible hemisphere
         if (point.x > -0.5) {
             points.push(point);
-
-            // Create base structure color (blue-ish)
+            
+            // Lighter blue coloring
             const color = new THREE.Color();
-            const hue = 0.6 + (Math.random() * 0.1); // Blue range
-            const saturation = 0.5 + (Math.random() * 0.2);
-            const lightness = 0.4 + (Math.random() * 0.2);
+            const hue = 0.6 + (Math.random() * 0.1); // Blue base
+            const saturation = 0.3 + (Math.random() * 0.2); // Reduced saturation for lighter blue
+            const lightness = 0.4 + (Math.random() * 0.2); // Increased lightness
             color.setHSL(hue, saturation, lightness);
             colors.push(color);
         }
     }
 
-    // Generate neuron pathways
-    const neuronCount = 60; // Increased from 50
-    for (let i = 0; i < neuronCount; i++) {
-        // Random starting point within the brain volume
-        const startPoint = brainShape(
-            Math.random() * Math.PI,
-            Math.random() * Math.PI * 2
-        );
-
-        const { points: neuronPoints, colors: neuronColors } = createNeuronPath(
-            startPoint,
-            3 + Math.floor(Math.random() * 3), // 3-5 branches
-            3 + Math.floor(Math.random() * 2)  // 3-4 depth
-        );
-
-        points.push(...neuronPoints);
-        colors.push(...neuronColors);
-    }
-
-    // Add some yellow highlight points
-    const highlightCount = Math.floor(totalPoints * 0.1);
-    for (let i = 0; i < highlightCount; i++) {
-        const basePointIndex = Math.floor(Math.random() * points.length);
-        const basePoint = points[basePointIndex];
-        
-        const newPoint = basePoint.clone();
-        // Add very small random offset
-        newPoint.x += (Math.random() - 0.5) * 0.05;
-        newPoint.y += (Math.random() - 0.5) * 0.05;
-        newPoint.z += (Math.random() - 0.5) * 0.05;
-        
-        points.push(newPoint);
-
-        // Yellow highlight color
-        const color = new THREE.Color();
-        const hue = 0.15 + (Math.random() * 0.05); // Yellow range
-        const saturation = 0.6 + (Math.random() * 0.2);
-        const lightness = 0.6 + (Math.random() * 0.2);
-        color.setHSL(hue, saturation, lightness);
-        colors.push(color);
+    // Generate neural pathways (white/gray points)
+    const pathwayCount = 15;
+    for (let i = 0; i < pathwayCount; i++) {
+        const { points: pathPoints, colors: pathColors } = createNeuralPathway(brainScale);
+        points.push(...pathPoints);
+        colors.push(...pathColors);
     }
 
     return { positions: points, colors: colors };

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { generateBrainPoints, generateRedPoints } from './generateBrainPoints.js';
 import * as TWEEN from 'https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.esm.js';
+// import fabric from 'fabric'; // Import fabric - Removed as per update 1
 
 let scene, camera, renderer, pointCloud;
 let isRotating = true;
@@ -8,7 +9,7 @@ let animationFrame;
 let isLeftMouseDown = false;
 let isRightMouseDown = false;
 let prevMouseX = 0, prevMouseY = 0;
-const rotationSpeed = 0;
+const rotationSpeed = 0.00;
 const cameraTarget = new THREE.Vector3(0, 0, 0);
 let raycaster, mouse;
 let activePointIndex = -1;
@@ -16,7 +17,7 @@ const redPointIndices = [];
 
 function createCircularText() {
     const circle = document.getElementById('textCircle');
-    const text = 'Brain '.repeat(8);
+    const text = 'Homara '.repeat(8);
     const radius = 33;
     const textElement = document.createElement('div');
     textElement.className = 'menu-text';
@@ -90,6 +91,7 @@ function toggleMenu(event) {
 }
 
 function init() {
+    // await loadFabric(); // Removed as per update 3
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x000000);
 
@@ -101,13 +103,14 @@ function init() {
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
 
-    const { positions, colors } = generateBrainPoints(200000); // Increased from 150000
+    const { positions, colors } = generateBrainPoints(340000); // Increased point count
     const redPoints = generateRedPoints(3, positions);
 
     const geometry = new THREE.BufferGeometry();
     const positionArray = new Float32Array(positions.length * 3 + redPoints.length * 3);
     const colorArray = new Float32Array(positions.length * 3 + redPoints.length * 3);
     const sizeArray = new Float32Array(positions.length + redPoints.length);
+    const customData = new Float32Array(positions.length * 3 + redPoints.length * 3);
 
     positions.forEach((point, i) => {
         positionArray[i * 3] = point.x;
@@ -118,7 +121,10 @@ function init() {
         colorArray[i * 3 + 1] = colors[i].g;
         colorArray[i * 3 + 2] = colors[i].b;
 
-        sizeArray[i] = 0.05; // Smaller base point size for more detail
+        sizeArray[i] = colors[i].g > 0.5 ? 0.03 : 0.02; // Larger size for neuron pathways
+
+        // Flag neuron pathways
+        customData[i * 3] = colors[i].g > 0.5 ? 1.0 : 0.0;
     });
 
     redPoints.forEach((point, i) => {
@@ -132,6 +138,7 @@ function init() {
         colorArray[index * 3 + 2] = point.color.b;
 
         sizeArray[index] = point.size;
+        customData[index * 3] = 2.0; // Flag for red points
 
         redPointIndices.push(index);
     });
@@ -139,42 +146,45 @@ function init() {
     geometry.setAttribute('position', new THREE.BufferAttribute(positionArray, 3));
     geometry.setAttribute('color', new THREE.BufferAttribute(colorArray, 3));
     geometry.setAttribute('size', new THREE.BufferAttribute(sizeArray, 1));
+    geometry.setAttribute('customData', new THREE.BufferAttribute(customData, 3));
 
     const material = new THREE.ShaderMaterial({
         vertexShader: `
             attribute float size;
+            attribute vec3 customData;
             varying vec3 vColor;
-            varying float vDepth;
+            varying float vType;
             
             void main() {
                 vColor = color;
+                vType = customData.x;
                 vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
                 gl_PointSize = size * (300.0 / -mvPosition.z);
                 gl_Position = projectionMatrix * mvPosition;
-                vDepth = (-mvPosition.z / 20.0); // Normalize depth
             }
         `,
         fragmentShader: `
             varying vec3 vColor;
-            varying float vDepth;
+            varying float vType;
             
             void main() {
                 vec2 center = gl_PointCoord - vec2(0.5);
                 float dist = length(center);
                 
-                // Smoother point rendering
-                float alpha = 1.0 - smoothstep(0.3, 0.5, dist);
-                
-                // Add glow effect for non-red points
-                if (vColor.r != 1.0 || vColor.g != 0.0 || vColor.b != 0.0) {
-                    float glow = exp(-2.0 * dist);
-                    vec3 finalColor = mix(vColor, vec3(1.0), glow * 0.3);
-                    alpha *= mix(0.4, 1.0, vDepth);
-                    gl_FragColor = vec4(finalColor, alpha);
-                } else {
-                    // Red points remain unchanged
+                if (vType == 2.0) {
+                    // Red points
                     if (dist > 0.5) discard;
                     gl_FragColor = vec4(vColor, 1.0);
+                } else if (vType == 1.0) {
+                    // Neuron pathways
+                    float alpha = 1.0 - smoothstep(0.3, 0.5, dist);
+                    float glow = exp(-2.0 * dist);
+                    vec3 finalColor = mix(vColor, vec3(1.0), glow * 0.3);
+                    gl_FragColor = vec4(finalColor, alpha * 0.7);
+                } else {
+                    // Brain structure
+                    if (dist > 0.5) discard;
+                    gl_FragColor = vec4(vColor, 0.5);
                 }
             }
         `,
@@ -309,7 +319,7 @@ function onPointClick(event) {
 
     if (redPointIntersect !== undefined) {
         console.log('Clicked on red point:', redPointIntersect);
-        // Add your desired action for clicking on a red point here
+        navigateToWhiteboard(redPointIntersect);
     }
 }
 
@@ -332,6 +342,155 @@ function onWindowResize() {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function navigateToWhiteboard(index) {
+    // Clear the existing scene
+    while (scene.children.length > 0) {
+        scene.remove(scene.children[0]);
+    }
+
+    // Remove existing canvas
+    renderer.domElement.remove();
+
+    // Create whiteboard container
+    const container = document.createElement('div');
+    container.style.position = 'fixed';
+    container.style.top = '0';
+    container.style.left = '0';
+    container.style.width = '100%';
+    container.style.height = '100%';
+    container.style.backgroundColor = '#f0f0f0';
+    document.body.appendChild(container);
+
+    // Create toolbar
+    const toolbar = document.createElement('div');
+    toolbar.className = 'toolbar';
+    container.appendChild(toolbar);
+
+    // Create canvas
+    const canvas = document.createElement('canvas');
+    canvas.id = 'whiteboard';
+    container.appendChild(canvas);
+
+    // Add styles
+    const style = document.createElement('style');
+    style.textContent = `
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+
+        #whiteboard {
+            width: 100%;
+            height: 100%;
+            background-image: radial-gradient(circle at 1px 1px, #c0c0c0 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        .toolbar {
+            position: fixed;
+            left: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            background: white;
+            padding: 8px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            z-index: 1000;
+        }
+
+        .tool {
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            cursor: pointer;
+            background: white;
+            border: 1px solid black;
+            transition: background-color 0.2s;
+        }
+
+        .tool:hover {
+            background-color: #f5f5f5;
+        }
+
+        .tool.active {
+            background-color: #edf2ff;
+        }
+
+        .tool svg {
+            width: 20px;
+            height: 20px;
+            color: #666;
+        }
+
+        .tool.active svg {
+            color: #4666ff;
+        }
+
+        #fileUpload {
+            display: none;
+        }
+
+        .file-upload-label {
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            cursor: pointer;
+            background: white;
+            border: 1px solid black;
+            transition: background-color 0.2s;
+        }
+
+        .file-upload-label:hover {
+            background-color: #f5f5f5;
+        }
+    `;
+    document.head.appendChild(style);
+
+    // Add toolbar HTML
+    toolbar.innerHTML = `
+        <button class="tool active" id="dragTool" title="Move Tool">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/></svg>
+        </button>
+        <button class="tool" id="polygonTool" title="Polygon Tool">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8.5 5v10L12 22l-8.5-5V7L12 2z"/></svg>
+        </button>
+        <button class="tool" id="textTool" title="Text Tool">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
+        </button>
+        <button class="tool" id="penTool" title="Pen Tool">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>
+        </button>
+        <label class="file-upload-label" title="Upload File">
+            <input type="file" id="fileUpload" accept="image/*,video/*">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        </label>
+        <button class="tool" id="zoomIn" title="Zoom In">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+        </button>
+        <button class="tool" id="zoomOut" title="Zoom Out">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+        </button>
+    `;
+
+
+    // Window resize handler
+    window.addEventListener("resize", () => {
+        // fabricCanvas.setWidth(window.innerWidth);
+        // fabricCanvas.setHeight(window.innerHeight);
+        // fabricCanvas.renderAll();
+    });
 }
 
 window.addEventListener('load', init);

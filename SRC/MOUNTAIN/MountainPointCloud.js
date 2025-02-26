@@ -29,18 +29,18 @@ class MountainPointCloud {
     this.renderer.setSize(window.innerWidth, window.innerHeight)
     document.body.appendChild(this.renderer.domElement)
 
-    this.camera.position.set(0, 100, 200)
+    this.camera.position.set(0, 50, 150)
     this.camera.lookAt(this.cameraTarget)
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement)
     this.controls.enableDamping = true
     this.controls.dampingFactor = 0.05
     this.controls.screenSpacePanning = false
-    this.controls.minDistance = 100
-    this.controls.maxDistance = 500
+    this.controls.minDistance = 0
+    this.controls.maxDistance = 150
     this.controls.maxPolarAngle = Math.PI / 2
 
-    const points = generateMountainPoints(200000, 50, 200, 200, 0.2)
+    const points = generateMountainPoints(600000, 50, 200, 200, 0.3)
     const geometry = new THREE.BufferGeometry()
 
     const positions = new Float32Array(points.length * 3)
@@ -74,7 +74,7 @@ class MountainPointCloud {
         void main() {
           vColor = color;
           vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-          gl_PointSize = size * (300.0 / -mvPosition.z);
+          gl_PointSize = size * (1400.0 / -mvPosition.z);
           gl_Position = projectionMatrix * mvPosition;
         }
       `,
@@ -109,7 +109,7 @@ class MountainPointCloud {
 
   createCircularText() {
     const circle = document.getElementById("textCircle")
-    const text = "Mountain Range ".repeat(4)
+    const text = "Homara".repeat(8)
     const radius = 33
     const textElement = document.createElement("div")
     textElement.className = "menu-text"
@@ -137,7 +137,7 @@ class MountainPointCloud {
 
   startRotation() {
     let rotation = 0
-    const rotateSpeed = 0.5
+    const rotateSpeed = 0.0
 
     const animate = () => {
       if (!this.isRotating) return
@@ -210,13 +210,10 @@ class MountainPointCloud {
   }
 
   resetCamera() {
-    new TWEEN.Tween(this.camera.position)
-      .to({ x: 0, y: 100, z: 200 }, 1000)
-      .easing(TWEEN.Easing.Quadratic.InOut)
-      .start()
+    new TWEEN.Tween(this.camera.position).to({ x: 0, y: 50, z: 150 }, 1000).easing(TWEEN.Easing.Quadratic.InOut).start()
 
     new TWEEN.Tween(this.cameraTarget)
-      .to({ x: 0, y: 0, z: 0 }, 1000)
+      .to({ x: 100, y: 0, z: 0 }, 1000)
       .easing(TWEEN.Easing.Quadratic.InOut)
       .onUpdate(() => this.camera.lookAt(this.cameraTarget))
       .start()
@@ -258,11 +255,8 @@ class MountainPointCloud {
       const deltaX = (event.clientX - this.prevMouseX) * 0.01
       const deltaY = (event.clientY - this.prevMouseY) * 0.01
 
-      this.camera.position.x -= deltaX
-      this.camera.position.y += deltaY
-      this.cameraTarget.x -= deltaX
-      this.cameraTarget.y += deltaY
-      this.camera.lookAt(this.cameraTarget)
+      this.pointCloud.position.x += deltaX
+      this.pointCloud.position.y -= deltaY
     }
 
     this.prevMouseX = event.clientX
@@ -530,7 +524,7 @@ class MountainPointCloud {
       }
 
       // Limit zoom range
-      newZoom = Math.min(Math.max(0.1, newZoom), 20)
+      newZoom = Math.min(Math.max(-10, newZoom), 10)
 
       // Calculate zoom point
       const point = new window.fabric.Point(opt.e.offsetX, opt.e.offsetY)
@@ -694,3 +688,4 @@ class MountainPointCloud {
 
 const mountainPointCloud = new MountainPointCloud()
 mountainPointCloud.init()
+

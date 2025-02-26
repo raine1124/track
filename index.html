@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Slideable Track</title>
+    <title>Homara</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -32,23 +32,37 @@
             <img class="image" src="images/brain map.png" draggable="false" />
             <a href="SRC/BRAIN/brain.html" class="view-button">View</a>
         </div>
-            <div class="image-container">
-                <img class="image" src="images/heartbetter.png" draggable="false" />
-                <a href="" class="view-button">View</a>
-            </div>
-            <div class="image-container">
-                <img class="image" src="images/mountain.png" draggable="false" />
-                <a href="SRC/MOUNTAIN/mountain.html" class="view-button">View</a>
-            </div>
-            <div class="image-container">
-                <img class="image" src="images/pinetreebasic.jpg" draggable="false" />
-                <a href="SRC/TREE/tree.html" class="view-button">View</a>
-            </div>
-        <img class="image" src="" draggable="false" />
-        <img class="image" src="" draggable="false" />
-        <img class="image" src="" draggable="false" />
-        <img class="image" src="" draggable="false" />
+        <div class="image-container">
+            <img class="image" src="images/heartbetter.png" draggable="false" />
+            <a href="SRC/HEART/heart.html" class="view-button">View</a>
+        </div>
+        <div class="image-container">
+            <img class="image" src="images/mountain.png" draggable="false" />
+            <a href="SRC/MOUNTAIN/mountain.html" class="view-button">View</a>
+        </div>
+        <div class="image-container">
+            <img class="image" src="images/pinetreebasic.jpg" draggable="false" />
+            <a href="SRC/TREE/tree.html" class="view-button">View</a>
+        </div>
+        
+        <!-- New email submission and voting container -->
+        <div class="form-container">
+            <h2>Vote for your favorite</h2>
+            <form id="email-vote-form" action="https://formspree.io/f/mgvojqlw" method="POST">
+                <input type="email" id="email-input" name="email" placeholder="Enter your email" required>
+                <div class="voting-options" id="voting-options">
+                    <button type="button" class="vote-button" data-option="brain">Brain</button>
+                    <button type="button" class="vote-button" data-option="heart">Heart</button>
+                    <button type="button" class="vote-button" data-option="mountain">Mountain</button>
+                    <button type="button" class="vote-button" data-option="tree">Tree</button>
+                </div>
+                <input type="hidden" name="vote" id="vote-input">
+                <button type="submit" id="submit-button" class="submit-button">Submit</button>
+                <div id="form-message" class="form-message"></div>
+            </form>
+        </div>
     </div>
     <script src="SRC/main.js"></script>
+    <script src="SRC/voting.js"></script>
 </body>
 </html>
