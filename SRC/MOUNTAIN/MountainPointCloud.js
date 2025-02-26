@@ -278,10 +278,12 @@ class MountainPointCloud {
     }
   }
 
+
+
   onMouseMove(event) {
     if (this.isLeftMouseDown) {
-      const deltaX = (event.clientX - this.prevMouseX) * 0.001
-      const deltaY = (event.clientY - this.prevMouseY) * 0.001
+      const deltaX = (event.clientX - this.prevMouseX) * 0.0009
+      const deltaY = (event.clientY - this.prevMouseY) * 0.0009
 
       this.pointCloud.rotation.y += deltaX
       this.pointCloud.rotation.x += deltaY
