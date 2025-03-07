@@ -1,19 +1,42 @@
 import * as THREE from 'three';
 import { generateBrainPoints, generateRedPoints } from './generateBrainPoints.js';
 import * as TWEEN from 'https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.esm.js';
-// import fabric from 'fabric'; // Import fabric - Removed as per update 1
 
 let scene, camera, renderer, pointCloud;
 let isRotating = true;
 let animationFrame;
-let isLeftMouseDown = false;
-let isRightMouseDown = false;
-let prevMouseX = 0, prevMouseY = 0;
 const rotationSpeed = 0.00;
-const cameraTarget = new THREE.Vector3(0, 0, 0);
 let raycaster, mouse;
 let activePointIndex = -1;
 const redPointIndices = [];
+
+// Camera controller variables
+let currentPosition = new THREE.Vector3();
+let target = new THREE.Vector3();
+let initialPosition = new THREE.Vector3(0, 0, 10);
+let initialTarget = new THREE.Vector3(0, 0, 0);
+let pitch = 0;
+let yaw = 0;
+let isMouseDown = false;
+let mouseButton = -1;
+let mousePosition = new THREE.Vector2();
+let previousMousePosition = new THREE.Vector2();
+let moveSpeed = 0.025;
+let rotateSpeed = 0.002;
+let dragSpeed = 0.25;
+let verticalSpeed = 0.025;
+let minDistance = 5;
+let maxDistance = 200;
+let keys = {
+  KeyW: false,
+  KeyS: false,
+  KeyA: false,
+  KeyD: false,
+  KeyQ: false,
+  KeyE: false,
+  Space: false,
+  ShiftLeft: false,
+};
 
 function createCircularText() {
     const circle = document.getElementById('textCircle');
@@ -109,14 +132,203 @@ function resetToMainScreen() {
     }
 }
 
+// Camera controller functions
+function calculateInitialRotation() {
+    // Calculate initial direction vector from origin to camera
+    const direction = currentPosition.clone().normalize().negate();
+
+    // Calculate initial yaw (horizontal rotation)
+    yaw = Math.atan2(direction.x, direction.z);
+
+    // Calculate initial pitch (vertical rotation)
+    const horizontalDistance = Math.sqrt(direction.x * direction.x + direction.z * direction.z);
+    pitch = Math.atan2(direction.y, horizontalDistance);
+}
+
+function updateCameraDirection() {
+    // Calculate the new look direction based on pitch and yaw
+    const direction = new THREE.Vector3();
+    direction.x = Math.sin(yaw) * Math.cos(pitch);
+    direction.y = Math.sin(pitch);
+    direction.z = Math.cos(yaw) * Math.cos(pitch);
+
+    // Get current distance to target
+    const distanceToTarget = currentPosition.distanceTo(target);
+
+    // Update the target position based on the camera position and direction
+    target.copy(currentPosition).add(direction.multiplyScalar(distanceToTarget));
+
+    // Update the camera to look at the target
+    camera.lookAt(target);
+}
+
+function onMouseDown(event) {
+    // If another button is already pressed, ignore new button presses
+    if (isMouseDown) return;
+
+    // Only track left click (0) or middle click (1), ignore right click (2)
+    if (event.button === 0 || event.button === 1) {
+        isMouseDown = true;
+        mouseButton = event.button;
+        mousePosition.set(event.clientX, event.clientY);
+    }
+}
+
+function onMouseMove(event) {
+    // Get mouse movement delta
+    const newMousePosition = new THREE.Vector2(event.clientX, event.clientY);
+    const delta = new THREE.Vector2().subVectors(newMousePosition, mousePosition);
+    mousePosition.copy(newMousePosition);
+
+    // Update for ray casting (point hover detection)
+    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    checkRedPointHover();
+
+    if (!isMouseDown) return;
+
+    // Use delta magnitude to prevent large jumps
+    const maxDelta = 20; // Max pixels of movement to consider per frame
+    if (delta.length() > maxDelta) {
+        delta.normalize().multiplyScalar(maxDelta);
+    }
+
+    if (mouseButton === 0 || mouseButton === 1) {
+        // Left click or middle click - First-person camera rotation
+        // Update yaw (left/right rotation)
+        yaw -= delta.x * rotateSpeed;
+
+        // Update pitch (up/down rotation) with limits to prevent flipping
+        pitch -= delta.y * rotateSpeed;
+        pitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, pitch));
+
+        // Update camera direction based on pitch and yaw
+        updateCameraDirection();
+    }
+}
+
+function onMouseUp(event) {
+    // Only clear mouse state if the released button matches the tracked button
+    if (event.button === mouseButton) {
+        isMouseDown = false;
+        mouseButton = -1;
+    }
+}
+
+function onMouseWheel(event) {
+    event.preventDefault();
+
+    // Simple fixed zoom rate - INVERTED (negative becomes positive and vice versa)
+    const zoomStep = event.deltaY > 0 ? -2.0 : 2.0;
+
+    // Get direction from camera to target
+    const directionToTarget = new THREE.Vector3().subVectors(target, currentPosition).normalize();
+
+    // Move camera along the view direction
+    const newPosition = currentPosition.clone().addScaledVector(directionToTarget, zoomStep);
+
+    // Calculate new distance
+    const newDistance = newPosition.distanceTo(target);
+
+    // Apply zoom only if within limits
+    if (newDistance >= minDistance && newDistance <= maxDistance) {
+        currentPosition.copy(newPosition);
+        camera.position.copy(currentPosition);
+    }
+}
+
+function onKeyDown(event) {
+    if (keys.hasOwnProperty(event.code)) {
+        keys[event.code] = true;
+    }
+}
+
+function onKeyUp(event) {
+    if (keys.hasOwnProperty(event.code)) {
+        keys[event.code] = false;
+    }
+}
+
+function updateCamera() {
+    // Handle WASD movement (relative to camera orientation)
+    const movement = new THREE.Vector3();
+
+    if (keys.KeyW) movement.z -= moveSpeed;
+    if (keys.KeyS) movement.z += moveSpeed;
+    if (keys.KeyA) movement.x -= moveSpeed;
+    if (keys.KeyD) movement.x += moveSpeed;
+
+    // Apply WASD movement in camera's local space
+    if (movement.lengthSq() > 0) {
+        // Create a quaternion based on the camera's current rotation
+        const quaternion = new THREE.Quaternion();
+        quaternion.setFromEuler(camera.rotation);
+
+        // Apply the quaternion to the movement vector
+        movement.applyQuaternion(quaternion);
+
+        // Apply the movement to the camera position
+        currentPosition.add(movement);
+        target.add(movement);
+    }
+
+    // Handle Space/Shift for global Y-axis movement (independent of camera orientation)
+    const verticalMovement = new THREE.Vector3(0, 0, 0);
+
+    if (keys.Space) verticalMovement.y += verticalSpeed;
+    if (keys.ShiftLeft) verticalMovement.y -= verticalSpeed;
+
+    // Apply vertical movement directly (global Y-axis)
+    if (verticalMovement.lengthSq() > 0) {
+        currentPosition.add(verticalMovement);
+        target.add(verticalMovement);
+    }
+
+    // Update camera position if any movement occurred
+    if (movement.lengthSq() > 0 || verticalMovement.lengthSq() > 0) {
+        camera.position.copy(currentPosition);
+    }
+
+    // Handle Q/E rotation around Y axis
+    if (keys.KeyQ) {
+        yaw += 0.01;
+        updateCameraDirection();
+    }
+    if (keys.KeyE) {
+        yaw -= 0.01;
+        updateCameraDirection();
+    }
+
+    // Ensure camera is looking at target
+    camera.lookAt(target);
+}
+
+function resetCamera() {
+    // Reset camera position and target to initial values
+    camera.position.copy(initialPosition);
+    currentPosition.copy(initialPosition);
+    target.copy(initialTarget);
+
+    // Reset rotation values
+    calculateInitialRotation();
+
+    // Update camera direction based on reset pitch and yaw
+    updateCameraDirection();
+
+    console.log("Camera reset to position:", initialPosition);
+}
+
 function init() {
-    // await loadFabric(); // Removed as per update 3
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x000000);
 
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.z = 10;
-    camera.lookAt(cameraTarget);
+    
+    // Initialize camera controller variables
+    currentPosition.copy(camera.position);
+    calculateInitialRotation();
+    updateCameraDirection();
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -220,11 +432,16 @@ function init() {
     raycaster.params.Points.threshold = 0.1;
     mouse = new THREE.Vector2();
 
+    // Set up camera controller event listeners
     document.addEventListener('mousedown', onMouseDown);
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
-    document.addEventListener('wheel', onWheel);
+    document.addEventListener('wheel', onMouseWheel, { passive: false });
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('keyup', onKeyUp);
     document.addEventListener('contextmenu', (e) => e.preventDefault());
+    
+    // Keep the point click event
     renderer.domElement.addEventListener('click', onPointClick);
 
     createCircularText();
@@ -240,16 +457,7 @@ function init() {
             console.log('Selected action:', action);
     
             if (action === 'reset') {
-                new TWEEN.Tween(camera.position)
-                    .to({ x: 0, y: 0, z: 10 }, 1000)
-                    .easing(TWEEN.Easing.Quadratic.InOut)
-                    .start();
-    
-                new TWEEN.Tween(cameraTarget)
-                    .to({ x: 0, y: 0, z: 0 }, 1000)
-                    .easing(TWEEN.Easing.Quadratic.InOut)
-                    .onUpdate(() => camera.lookAt(cameraTarget))
-                    .start();
+                resetCamera();
     
                 new TWEEN.Tween(pointCloud.rotation)
                     .to({ x: 0, y: 0, z: 0 }, 1000)
@@ -267,68 +475,6 @@ function init() {
     window.addEventListener('resize', onWindowResize);
 
     animate();
-}
-
-
-function onMouseDown(event) {
-    if (event.button === 0) {
-        isLeftMouseDown = true;
-    } else if (event.button === 2) {
-        isRightMouseDown = true;
-    }
-    prevMouseX = event.clientX;
-    prevMouseY = event.clientY;
-}
-
-function onMouseUp(event) {
-    if (event.button === 0) {
-        isLeftMouseDown = false;
-    } else if (event.button === 2) {
-        isRightMouseDown = false;
-    }
-}
-
-function onMouseMove(event) {
-    if (isLeftMouseDown) {
-        const deltaX = (event.clientX - prevMouseX) * 0.01;
-        const deltaY = (event.clientY - prevMouseY) * 0.01;
-
-        pointCloud.rotation.y += deltaX;
-        pointCloud.rotation.x += deltaY;
-    }
-
-    if (isRightMouseDown) {
-        const deltaX = (event.clientX - prevMouseX) * 0.01;
-        const deltaY = (event.clientY - prevMouseY) * 0.01;
-
-        camera.position.x -= deltaX;
-        camera.position.y += deltaY;
-        cameraTarget.x -= deltaX;
-        cameraTarget.y += deltaY;
-        camera.lookAt(cameraTarget);
-    }
-
-    prevMouseX = event.clientX;
-    prevMouseY = event.clientY;
-
-    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
-    checkRedPointHover();
-}
-
-function onWheel(event) {
-    event.preventDefault();
-    const zoomSpeed = 0.001;
-    camera.position.z += event.deltaY * zoomSpeed;
-    camera.position.z = Math.max(1, Math.min(20, camera.position.z));
-}
-
-function animate() {
-    requestAnimationFrame(animate);
-    TWEEN.update();
-    pointCloud.rotation.y += rotationSpeed;
-    renderer.render(scene, camera);
 }
 
 function onPointClick(event) {
@@ -367,7 +513,29 @@ function onWindowResize() {
     renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
+function animate() {
+    requestAnimationFrame(animate);
+    TWEEN.update();
+    
+    // Update camera using the camera controller logic
+    updateCamera();
+    
+    // Only apply rotation to the point cloud, not the camera
+    pointCloud.rotation.y += rotationSpeed;
+    
+    renderer.render(scene, camera);
+}
+
 function navigateToWhiteboard(index) {
+    // Remove event listeners
+    document.removeEventListener('mousedown', onMouseDown);
+    document.removeEventListener('mousemove', onMouseMove);
+    document.removeEventListener('mouseup', onMouseUp);
+    document.removeEventListener('wheel', onMouseWheel);
+    document.removeEventListener('keydown', onKeyDown);
+    document.removeEventListener('keyup', onKeyUp);
+    document.removeEventListener('contextmenu', (e) => e.preventDefault());
+    
     // Clear the existing scene
     while (scene.children.length > 0) {
         scene.remove(scene.children[0]);
@@ -507,12 +675,9 @@ function navigateToWhiteboard(index) {
         </button>
     `;
 
-
     // Window resize handler
     window.addEventListener("resize", () => {
-        // fabricCanvas.setWidth(window.innerWidth);
-        // fabricCanvas.setHeight(window.innerHeight);
-        // fabricCanvas.renderAll();
+        // Handle resize if needed
     });
 }
 
