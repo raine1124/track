@@ -295,8 +295,8 @@ function onMouseUp(event) {
 function onMouseMove(event) {
   if (isLeftMouseDown) {
     // Rotate tree
-    const deltaX = (event.clientX - prevMouseX) * 0.0009
-    const deltaY = (event.clientY - prevMouseY) * 0.0009
+    const deltaX = (event.clientX - prevMouseX) * 0.001
+    const deltaY = (event.clientY - prevMouseY) * 0.001
 
     pointCloud.rotation.y += deltaX
     pointCloud.rotation.x += deltaY
