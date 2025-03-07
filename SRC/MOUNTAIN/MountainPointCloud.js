@@ -1,6 +1,5 @@
 // Make sure fabric.js is properly installed and linked in your HTML file
 import * as THREE from "three"
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls"
 import { generateMountainPoints } from "./generateMountainPoints.js"
 import * as TWEEN from "https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.esm.js"
 
@@ -8,38 +7,74 @@ class MountainPointCloud {
   constructor() {
     this.scene = new THREE.Scene()
     this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000)
-    this.renderer = new THREE.WebGLRenderer({ antialias: true })
-    this.controls = null
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" })
     this.pointCloud = null
     this.raycaster = new THREE.Raycaster()
     this.mouse = new THREE.Vector2()
-    this.isRotating = true
-    this.isLeftMouseDown = false
-    this.isRightMouseDown = false
-    this.prevMouseX = 0
-    this.prevMouseY = 0
+    this.isRotating = false
     this.rotationSpeed = 0.001
-    this.cameraTarget = new THREE.Vector3(0, 0, 0)
     this.activePointIndex = -1
     this.redPointIndices = []
+    
+    // Camera controller variables
+    this.currentPosition = new THREE.Vector3()
+    this.target = new THREE.Vector3(0, 0, 0)
+    this.initialPosition = new THREE.Vector3(0, 50, 150)
+    this.initialTarget = new THREE.Vector3(0, 0, 0)
+    this.pitch = 0
+    this.yaw = 0
+    this.isMouseDown = false
+    this.mouseButton = -1
+    this.mousePosition = new THREE.Vector2()
+    this.previousMousePosition = new THREE.Vector2()
+    this.moveSpeed = 0.525
+    this.rotateSpeed = 0.002
+    this.dragSpeed = 0.25
+    this.verticalSpeed = 0.525
+    this.minDistance = 5
+    this.maxDistance = 200
+    this.keys = {
+      KeyW: false,
+      KeyS: false,
+      KeyA: false,
+      KeyD: false,
+      KeyQ: false,
+      KeyE: false,
+      Space: false,
+      ShiftLeft: false,
+    }
+    
+    // Throttling variables for performance
+    this.lastRenderTime = 0
+    this.renderInterval = 1000 / 60 // Target 60 FPS
+    this.lastCameraUpdateTime = 0
+    this.cameraUpdateInterval = 16 // ~60 FPS for camera updates
+    
+    // Bind event handlers to preserve context
+    this._boundMouseDown = this.onMouseDown.bind(this)
+    this._boundMouseMove = this.onMouseMove.bind(this)
+    this._boundMouseUp = this.onMouseUp.bind(this)
+    this._boundWheel = this.onWheel.bind(this)
+    this._boundKeyDown = this.onKeyDown.bind(this)
+    this._boundKeyUp = this.onKeyUp.bind(this)
+    this._boundPointClick = this.onPointClick.bind(this)
+    this._boundWindowResize = this.onWindowResize.bind(this)
+    this._boundContextMenu = (e) => e.preventDefault()
   }
 
   init() {
+    // Set renderer properties for better performance
+    this.renderer.setPixelRatio(window.devicePixelRatio > 1 ? 2 : 1); // Limit pixel ratio
     this.scene.background = new THREE.Color(0x000000)
     this.renderer.setSize(window.innerWidth, window.innerHeight)
     document.body.appendChild(this.renderer.domElement)
 
     this.camera.position.set(0, 50, 150)
-    this.camera.lookAt(this.cameraTarget)
+    this.currentPosition.copy(this.camera.position)
+    this.calculateInitialRotation()
+    this.updateCameraDirection()
 
-    this.controls = new OrbitControls(this.camera, this.renderer.domElement)
-    this.controls.enableDamping = true
-    this.controls.dampingFactor = 0.05
-    this.controls.screenSpacePanning = false
-    this.controls.minDistance = 0
-    this.controls.maxDistance = 150
-    this.controls.maxPolarAngle = Math.PI / 2
-
+    // Generate points with optimized settings
     const points = generateMountainPoints(600000, 50, 200, 200, 0.3)
     const geometry = new THREE.BufferGeometry()
 
@@ -87,28 +122,134 @@ class MountainPointCloud {
         }
       `,
       vertexColors: true,
+      transparent: false,
+      depthTest: true,
+      depthWrite: true,
     })
 
     this.pointCloud = new THREE.Points(geometry, material)
     this.scene.add(this.pointCloud)
 
-    window.addEventListener("resize", () => this.onWindowResize(), false)
-    document.addEventListener("mousedown", (e) => this.onMouseDown(e))
-    document.addEventListener("mousemove", (e) => this.onMouseMove(e))
-    document.addEventListener("mouseup", (e) => this.onMouseUp(e))
-    document.addEventListener("wheel", (e) => this.onWheel(e))
-    document.addEventListener("contextmenu", (e) => e.preventDefault())
-    this.renderer.domElement.addEventListener("click", (e) => this.onPointClick(e))
+    // Set up camera controller event listeners with proper binding
+    document.addEventListener('mousedown', this._boundMouseDown, { passive: true })
+    document.addEventListener('mousemove', this._boundMouseMove, { passive: true })
+    document.addEventListener('mouseup', this._boundMouseUp, { passive: true })
+    document.addEventListener('wheel', this._boundWheel, { passive: false })
+    document.addEventListener('keydown', this._boundKeyDown, { passive: true })
+    document.addEventListener('keyup', this._boundKeyUp, { passive: true })
+    document.addEventListener('contextmenu', this._boundContextMenu)
+    
+    window.addEventListener("resize", this._boundWindowResize, { passive: true })
+    this.renderer.domElement.addEventListener("click", this._boundPointClick, { passive: true })
 
     this.createCircularText()
     this.startRotation()
     this.setupMenu()
 
+    // Start animation loop
     this.animate()
+  }
+
+  // Camera controller functions
+  calculateInitialRotation() {
+    // Calculate initial direction vector from origin to camera
+    const direction = this.currentPosition.clone().normalize().negate();
+
+    // Calculate initial yaw (horizontal rotation)
+    this.yaw = Math.atan2(direction.x, direction.z);
+
+    // Calculate initial pitch (vertical rotation)
+    const horizontalDistance = Math.sqrt(direction.x * direction.x + direction.z * direction.z);
+    this.pitch = Math.atan2(direction.y, horizontalDistance);
+  }
+
+  updateCameraDirection() {
+    // Calculate the new look direction based on pitch and yaw
+    const direction = new THREE.Vector3();
+    direction.x = Math.sin(this.yaw) * Math.cos(this.pitch);
+    direction.y = Math.sin(this.pitch);
+    direction.z = Math.cos(this.yaw) * Math.cos(this.pitch);
+
+    // Get current distance to target
+    const distanceToTarget = this.currentPosition.distanceTo(this.target);
+
+    // Update the target position based on the camera position and direction
+    this.target.copy(this.currentPosition).add(direction.multiplyScalar(distanceToTarget));
+
+    // Update the camera to look at the target
+    this.camera.lookAt(this.target);
+  }
+
+  updateCamera() {
+    // Throttle camera updates for better performance
+    const now = performance.now();
+    if (now - this.lastCameraUpdateTime < this.cameraUpdateInterval) {
+      return;
+    }
+    this.lastCameraUpdateTime = now;
+    
+    // Check if any movement keys are pressed
+    const hasMovement = Object.values(this.keys).some(key => key);
+    if (!hasMovement && !this.isMouseDown) return; // Skip update if no input
+    
+    // Handle WASD movement (relative to camera orientation)
+    const movement = new THREE.Vector3();
+
+    // Apply the exact moveSpeed value (0.125)
+    if (this.keys.KeyW) movement.z -= this.moveSpeed;
+    if (this.keys.KeyS) movement.z += this.moveSpeed;
+    if (this.keys.KeyA) movement.x -= this.moveSpeed;
+    if (this.keys.KeyD) movement.x += this.moveSpeed;
+
+    // Apply WASD movement in camera's local space
+    if (movement.lengthSq() > 0) {
+      // Create a quaternion based on the camera's current rotation
+      const quaternion = new THREE.Quaternion();
+      quaternion.setFromEuler(this.camera.rotation);
+
+      // Apply the quaternion to the movement vector
+      movement.applyQuaternion(quaternion);
+
+      // Apply the movement to the camera position
+      this.currentPosition.add(movement);
+      this.target.add(movement);
+    }
+
+    // Handle Space/Shift for global Y-axis movement (independent of camera orientation)
+    const verticalMovement = new THREE.Vector3(0, 0, 0);
+
+    if (this.keys.Space) verticalMovement.y += this.verticalSpeed;
+    if (this.keys.ShiftLeft) verticalMovement.y -= this.verticalSpeed;
+
+    // Apply vertical movement directly (global Y-axis)
+    if (verticalMovement.lengthSq() > 0) {
+      this.currentPosition.add(verticalMovement);
+      this.target.add(verticalMovement);
+    }
+
+    // Update camera position if any movement occurred
+    if (movement.lengthSq() > 0 || verticalMovement.lengthSq() > 0) {
+      this.camera.position.copy(this.currentPosition);
+    }
+
+    // Handle Q/E rotation around Y axis
+    if (this.keys.KeyQ) {
+      this.yaw += 0.01;
+      this.updateCameraDirection();
+    }
+    if (this.keys.KeyE) {
+      this.yaw -= 0.01;
+      this.updateCameraDirection();
+    }
+
+    // Ensure camera is looking at target
+    this.camera.lookAt(this.target);
   }
 
   createCircularText() {
     const circle = document.getElementById("textCircle")
+    if (!circle) return; // Guard clause to prevent errors
+    
     const text = "Homara".repeat(8)
     const radius = 33
     const textElement = document.createElement("div")
@@ -118,6 +259,9 @@ class MountainPointCloud {
     const totalAngle = 360
     const anglePerChar = totalAngle / characters.length
 
+    // Create document fragment for better performance
+    const fragment = document.createDocumentFragment();
+    
     characters.forEach((char, i) => {
       const span = document.createElement("span")
       span.textContent = char
@@ -129,20 +273,23 @@ class MountainPointCloud {
         rotate(90deg)
       `
 
-      textElement.appendChild(span)
+      fragment.appendChild(span)
     })
 
+    textElement.appendChild(fragment)
     circle.appendChild(textElement)
   }
 
   startRotation() {
     let rotation = 0
     const rotateSpeed = 0.0
+    const textCircle = document.getElementById("textCircle")
+    if (!textCircle) return; // Guard clause
 
     const animate = () => {
       if (!this.isRotating) return
       rotation += rotateSpeed
-      document.getElementById("textCircle").style.transform = `rotate(${rotation}deg)`
+      textCircle.style.transform = `rotate(${rotation}deg)`
       requestAnimationFrame(animate)
     }
 
@@ -150,24 +297,27 @@ class MountainPointCloud {
   }
 
   setupMenu() {
+    const menu = document.getElementById("radialMenu")
+    const textCircle = document.getElementById("textCircle")
+    if (!menu || !textCircle) return; // Guard clause
+    
     const toggleMenu = (event) => {
       event.stopPropagation()
-      const menu = document.getElementById("radialMenu")
-      const textCircle = document.getElementById("textCircle")
       const isActive = !menu.classList.contains("active")
 
       if (isActive) {
         textCircle.style.transform = "rotate(90deg)"
         this.isRotating = false
 
-        setTimeout(() => {
+        // Use requestAnimationFrame for smoother transitions
+        requestAnimationFrame(() => {
           menu.classList.add("active")
           document.querySelectorAll(".menu-option").forEach((option, index) => {
             option.style.transform = "translateY(0)"
             option.style.opacity = "1"
             option.style.transitionDelay = `${index * 0.1}s`
           })
-        }, 300)
+        })
       } else {
         menu.classList.remove("active")
         document.querySelectorAll(".menu-option").forEach((option) => {
@@ -183,60 +333,38 @@ class MountainPointCloud {
     }
 
     function resetToMainScreen() {
-      console.log("Home button clicked, attempting navigation");
-      
-      // Try multiple approaches to navigate
+      // Simplified navigation with fewer console logs
       try {
-          // Option 1: Direct window location change
           window.location.href = "../../index.html";
-          
-          // Option 2: If option 1 fails, try absolute path
-          setTimeout(() => {
-              console.log("Trying absolute path...");
-              window.location = "file:///D:/HomaraDemoTrack/index.html";
-          }, 500);
       } catch (error) {
           console.error("Navigation error:", error);
-          alert("Could not navigate to home page. Check console for details.");
       }
-  }
+    }
 
-    document.getElementById("radialMenu").addEventListener("click", toggleMenu)
+    menu.addEventListener("click", toggleMenu)
 
     document.querySelectorAll('.menu-option').forEach((option) => {
-              option.addEventListener('click', (e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  const action = e.target.dataset.action;
-                  console.log('Selected action:', action);
+      option.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const action = e.target.dataset.action;
+
+        if (action === 'reset') {
+          this.resetCamera();
           
-                  if (action === 'reset') {
-                      new TWEEN.Tween(camera.position)
-                          .to({ x: 0, y: 0, z: 10 }, 1000)
-                          .easing(TWEEN.Easing.Quadratic.InOut)
-                          .start();
-          
-                      new TWEEN.Tween(cameraTarget)
-                          .to({ x: 0, y: 0, z: 0 }, 1000)
-                          .easing(TWEEN.Easing.Quadratic.InOut)
-                          .onUpdate(() => camera.lookAt(cameraTarget))
-                          .start();
-          
-                      new TWEEN.Tween(pointCloud.rotation)
-                          .to({ x: 0, y: 0, z: 0 }, 1000)
-                          .easing(TWEEN.Easing.Quadratic.InOut)
-                          .start();
-                      } else if (action === 'home') {
-                          console.log('Home action detected'); // Debug log
-                          resetToMainScreen(); // Call the function to reset to the main screen
-                      }
-                      
-                      toggleMenu(e);
-                  });
-              });
+          new TWEEN.Tween(this.pointCloud.rotation)
+            .to({ x: 0, y: 0, z: 0 }, 1000)
+            .easing(TWEEN.Easing.Quadratic.InOut)
+            .start();
+        } else if (action === 'home') {
+          resetToMainScreen();
+        }
+        
+        toggleMenu(e);
+      });
+    });
 
     document.addEventListener("click", (e) => {
-      const menu = document.getElementById("radialMenu")
       if (menu.classList.contains("active")) {
         menu.classList.remove("active")
         this.isRotating = true
@@ -246,74 +374,105 @@ class MountainPointCloud {
   }
 
   resetCamera() {
-    new TWEEN.Tween(this.camera.position).to({ x: 0, y: 50, z: 150 }, 1000).easing(TWEEN.Easing.Quadratic.InOut).start()
+    // Reset camera position and target to initial values
+    this.camera.position.copy(this.initialPosition);
+    this.currentPosition.copy(this.initialPosition);
+    this.target.copy(this.initialTarget);
 
-    new TWEEN.Tween(this.cameraTarget)
-      .to({ x: 100, y: 0, z: 0 }, 1000)
-      .easing(TWEEN.Easing.Quadratic.InOut)
-      .onUpdate(() => this.camera.lookAt(this.cameraTarget))
-      .start()
+    // Reset rotation values
+    this.calculateInitialRotation();
 
-    new TWEEN.Tween(this.pointCloud.rotation)
-      .to({ x: 0, y: 0, z: 0 }, 1000)
-      .easing(TWEEN.Easing.Quadratic.InOut)
-      .start()
+    // Update camera direction based on reset pitch and yaw
+    this.updateCameraDirection();
   }
 
   onMouseDown(event) {
-    if (event.button === 0) {
-      this.isLeftMouseDown = true
-    } else if (event.button === 2) {
-      this.isRightMouseDown = true
+    // If another button is already pressed, ignore new button presses
+    if (this.isMouseDown) return;
+
+    // Only track left click (0) or middle click (1), ignore right click (2)
+    if (event.button === 0 || event.button === 1) {
+      this.isMouseDown = true;
+      this.mouseButton = event.button;
+      this.mousePosition.set(event.clientX, event.clientY);
     }
-    this.prevMouseX = event.clientX
-    this.prevMouseY = event.clientY
   }
 
   onMouseUp(event) {
-    if (event.button === 0) {
-      this.isLeftMouseDown = false
-    } else if (event.button === 2) {
-      this.isRightMouseDown = false
+    // Only clear mouse state if the released button matches the tracked button
+    if (event.button === this.mouseButton) {
+      this.isMouseDown = false;
+      this.mouseButton = -1;
     }
   }
 
-
-
   onMouseMove(event) {
-    if (this.isLeftMouseDown) {
-      const deltaX = (event.clientX - this.prevMouseX) * 0.0009
-      const deltaY = (event.clientY - this.prevMouseY) * 0.0009
+    // Get mouse movement delta
+    const newMousePosition = new THREE.Vector2(event.clientX, event.clientY);
+    const delta = new THREE.Vector2().subVectors(newMousePosition, this.mousePosition);
+    this.mousePosition.copy(newMousePosition);
 
-      this.pointCloud.rotation.y += deltaX
-      this.pointCloud.rotation.x += deltaY
+    // Update for ray casting (point hover detection) - only when not moving camera
+    if (!this.isMouseDown) {
+      this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+      this.checkRedPointHover();
     }
 
-    if (this.isRightMouseDown) {
-      const deltaX = (event.clientX - this.prevMouseX) * 0.01
-      const deltaY = (event.clientY - this.prevMouseY) * 0.01
+    if (!this.isMouseDown) return;
 
-      this.pointCloud.position.x += deltaX
-      this.pointCloud.position.y -= deltaY
+    // Use delta magnitude to prevent large jumps
+    const maxDelta = 20; // Max pixels of movement to consider per frame
+    if (delta.length() > maxDelta) {
+      delta.normalize().multiplyScalar(maxDelta);
     }
 
-    this.prevMouseX = event.clientX
-    this.prevMouseY = event.clientY
+    if (this.mouseButton === 0 || this.mouseButton === 1) {
+      // Left click or middle click - First-person camera rotation
+      // Update yaw (left/right rotation)
+      this.yaw -= delta.x * this.rotateSpeed;
 
-    this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1
-    this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1
+      // Update pitch (up/down rotation) with limits to prevent flipping
+      this.pitch -= delta.y * this.rotateSpeed;
+      this.pitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, this.pitch));
 
-    this.checkRedPointHover()
+      // Update camera direction based on pitch and yaw
+      this.updateCameraDirection();
+    }
   }
 
   onWheel(event) {
-    event.preventDefault()
-    const zoomSpeed = 0.001
-    this.camera.position.z += event.deltaY * zoomSpeed
-    this.camera.position.z = Math.max(
-      this.controls.minDistance,
-      Math.min(this.controls.maxDistance, this.camera.position.z),
-    )
+    event.preventDefault();
+
+    // Simple fixed zoom rate - INVERTED (negative becomes positive and vice versa)
+    const zoomStep = event.deltaY > 0 ? -2.0 : 2.0;
+
+    // Get direction from camera to target
+    const directionToTarget = new THREE.Vector3().subVectors(this.target, this.currentPosition).normalize();
+
+    // Move camera along the view direction
+    const newPosition = this.currentPosition.clone().addScaledVector(directionToTarget, zoomStep);
+
+    // Calculate new distance
+    const newDistance = newPosition.distanceTo(this.target);
+
+    // Apply zoom only if within limits
+    if (newDistance >= this.minDistance && newDistance <= this.maxDistance) {
+      this.currentPosition.copy(newPosition);
+      this.camera.position.copy(this.currentPosition);
+    }
+  }
+
+  onKeyDown(event) {
+    if (this.keys.hasOwnProperty(event.code)) {
+      this.keys[event.code] = true;
+    }
+  }
+
+  onKeyUp(event) {
+    if (this.keys.hasOwnProperty(event.code)) {
+      this.keys[event.code] = false;
+    }
   }
 
   onPointClick(event) {
@@ -333,6 +492,13 @@ class MountainPointCloud {
   }
 
   checkRedPointHover() {
+    // Throttle hover checks for better performance
+    const now = performance.now();
+    if (now - this.lastHoverCheckTime < 100) { // Check every 100ms
+      return;
+    }
+    this.lastHoverCheckTime = now;
+    
     this.raycaster.setFromCamera(this.mouse, this.camera)
     const intersects = this.raycaster.intersectObject(this.pointCloud)
 
@@ -341,22 +507,53 @@ class MountainPointCloud {
     )
 
     if (redPointIntersect !== undefined) {
-      this.activePointIndex = redPointIntersect
-      document.body.style.cursor = "pointer"
-    } else {
+      if (this.activePointIndex !== redPointIntersect) {
+        this.activePointIndex = redPointIntersect
+        document.body.style.cursor = "pointer"
+      }
+    } else if (this.activePointIndex !== -1) {
       this.activePointIndex = -1
       document.body.style.cursor = "default"
     }
   }
 
   navigateToWhiteboard(index) {
+    // Remove event listeners with proper references
+    document.removeEventListener('mousedown', this._boundMouseDown);
+    document.removeEventListener('mousemove', this._boundMouseMove);
+    document.removeEventListener('mouseup', this._boundMouseUp);
+    document.removeEventListener('wheel', this._boundWheel);
+    document.removeEventListener('keydown', this._boundKeyDown);
+    document.removeEventListener('keyup', this._boundKeyUp);
+    document.removeEventListener('contextmenu', this._boundContextMenu);
+    window.removeEventListener('resize', this._boundWindowResize);
+    this.renderer.domElement.removeEventListener('click', this._boundPointClick);
+    
+    // Dispose of Three.js resources to free memory
+    this.pointCloud.geometry.dispose();
+    this.pointCloud.material.dispose();
+    this.scene.remove(this.pointCloud);
+    this.pointCloud = null;
+    
     // Clear the existing scene
     while (this.scene.children.length > 0) {
-      this.scene.remove(this.scene.children[0])
+      const object = this.scene.children[0];
+      if (object.geometry) object.geometry.dispose();
+      if (object.material) {
+        if (Array.isArray(object.material)) {
+          object.material.forEach(material => material.dispose());
+        } else {
+          object.material.dispose();
+        }
+      }
+      this.scene.remove(object);
     }
 
+    // Dispose of renderer
+    this.renderer.dispose();
+    
     // Remove existing canvas
-    this.renderer.domElement.remove()
+    this.renderer.domElement.remove();
 
     // Create whiteboard container
     const container = document.createElement("div")
@@ -489,14 +686,30 @@ class MountainPointCloud {
       </button>
     `
 
-    // Initialize Fabric.js canvas
-    const fabricCanvas = new window.fabric.Canvas("whiteboard", {
-      width: window.innerWidth,
-      height: window.innerHeight,
-      backgroundColor: "transparent",
-    })
+    // Initialize Fabric.js canvas if available
+    if (window.fabric) {
+      const fabricCanvas = new window.fabric.Canvas("whiteboard", {
+        width: window.innerWidth,
+        height: window.innerHeight,
+        backgroundColor: "transparent",
+        enableRetinaScaling: false, // Disable retina scaling for better performance
+        renderOnAddRemove: false, // Disable automatic rendering for better performance
+      })
+      this.initializeWhiteboard(fabricCanvas)
+    }
 
-    this.initializeWhiteboard(fabricCanvas)
+    // Window resize handler with debounce
+    let resizeTimeout;
+    window.addEventListener("resize", () => {
+      if (resizeTimeout) clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(() => {
+        if (window.fabric && fabricCanvas) {
+          fabricCanvas.setWidth(window.innerWidth)
+          fabricCanvas.setHeight(window.innerHeight)
+          fabricCanvas.renderAll()
+        }
+      }, 250); // Debounce resize events
+    })
   }
 
   initializeWhiteboard(fabricCanvas) {
@@ -504,6 +717,13 @@ class MountainPointCloud {
     let isDrawingPolygon = false
     let polygonPoints = []
     let zoom = 1
+    let isPanning = false
+    let lastPosX, lastPosY
+    
+    // Optimize fabric canvas
+    fabricCanvas.selection = true;
+    fabricCanvas.skipTargetFind = false;
+    fabricCanvas.targetFindTolerance = 5;
 
     function setActiveTool(toolId) {
       document.querySelectorAll(".tool").forEach((el) => el.classList.remove("active"))
@@ -529,68 +749,89 @@ class MountainPointCloud {
         isDrawingPolygon = false
         polygonPoints = []
       }
-    }
-
-    // Tool click handlers
-    document.getElementById("dragTool").onclick = () => setActiveTool("dragTool")
-    document.getElementById("polygonTool").onclick = () => setActiveTool("polygonTool")
-    document.getElementById("textTool").onclick = () => setActiveTool("textTool")
-    document.getElementById("penTool").onclick = () => setActiveTool("penTool")
-
-    // Zoom handlers
-    document.getElementById("zoomIn").onclick = () => {
-      zoom *= 1.1
-      fabricCanvas.setZoom(zoom)
+      
+      // Optimize rendering after tool change
       fabricCanvas.renderAll()
     }
 
-    document.getElementById("zoomOut").onclick = () => {
-      zoom /= 1.1
-      fabricCanvas.setZoom(zoom)
-      fabricCanvas.renderAll()
-    }
+    // Tool click handlers with optimized event handling
+    const toolButtons = {
+      dragTool: document.getElementById("dragTool"),
+      polygonTool: document.getElementById("polygonTool"),
+      textTool: document.getElementById("textTool"),
+      penTool: document.getElementById("penTool"),
+      zoomIn: document.getElementById("zoomIn"),
+      zoomOut: document.getElementById("zoomOut")
+    };
+    
+    // Use event delegation for better performance
+    const toolbar = document.querySelector(".toolbar");
+    toolbar.addEventListener("click", (e) => {
+      const toolButton = e.target.closest(".tool");
+      if (!toolButton) return;
+      
+      const toolId = toolButton.id;
+      if (toolId === "zoomIn") {
+        zoom = Math.min(zoom * 1.1, 10); // Limit max zoom
+        fabricCanvas.setZoom(zoom);
+        fabricCanvas.renderAll();
+      } else if (toolId === "zoomOut") {
+        zoom = Math.max(zoom / 1.1, 0.1); // Limit min zoom
+        fabricCanvas.setZoom(zoom);
+        fabricCanvas.renderAll();
+      } else if (toolButtons[toolId]) {
+        setActiveTool(toolId);
+      }
+    });
 
-    // Mouse wheel zoom
+    // Mouse wheel zoom - Fixed and optimized
     fabricCanvas.on("mouse:wheel", (opt) => {
-      const delta = opt.e.deltaY
-      let newZoom = zoom
+      opt.e.preventDefault();
+      opt.e.stopPropagation();
+      
+      // Throttle wheel events for smoother zooming
+      if (this._wheelThrottleTimeout) return;
+      this._wheelThrottleTimeout = setTimeout(() => {
+        this._wheelThrottleTimeout = null;
+      }, 16); // ~60fps
+      
+      const delta = opt.e.deltaY;
+      let newZoom = zoom;
 
       if (delta > 0) {
-        newZoom = zoom * 0.95
+        newZoom = zoom * 0.95;
       } else {
-        newZoom = zoom * 1.05
+        newZoom = zoom * 1.05;
       }
 
       // Limit zoom range
-      newZoom = Math.min(Math.max(-10, newZoom), 10)
+      newZoom = Math.min(Math.max(0.1, newZoom), 10);
 
       // Calculate zoom point
-      const point = new window.fabric.Point(opt.e.offsetX, opt.e.offsetY)
-      fabricCanvas.zoomToPoint(point, newZoom)
+      const point = new window.fabric.Point(opt.e.offsetX, opt.e.offsetY);
+      fabricCanvas.zoomToPoint(point, newZoom);
 
-      zoom = newZoom
-      opt.e.preventDefault()
-      opt.e.stopPropagation()
-    })
+      zoom = newZoom;
+    });
 
-    // Canvas click handler
+    // Optimized canvas event handlers
     fabricCanvas.on("mouse:down", (opt) => {
-      const pointer = fabricCanvas.getPointer(opt.e)
+      const pointer = fabricCanvas.getPointer(opt.e);
 
       if (currentTool === "polygonTool") {
         if (!isDrawingPolygon) {
-          isDrawingPolygon = true
-          polygonPoints = []
+          isDrawingPolygon = true;
+          polygonPoints = [];
         }
 
         polygonPoints.push({
           x: pointer.x,
           y: pointer.y,
-        })
+        });
 
         // Remove previous preview polygon if it exists
         if (fabricCanvas._objects.length > 0 && fabricCanvas._objects[fabricCanvas._objects.length - 1]._polyPoints) {
-          fabricCanvas.remove(fabricCanvas._objects[fabricCanvas._objects.length - 1])
+          fabricCanvas.remove(fabricCanvas._objects[fabricCanvas._objects.length - 1]);
         }
 
         // Draw the polygon with current points
@@ -602,9 +843,9 @@ class MountainPointCloud {
             selectable: false,
             evented: false,
             _polyPoints: true, // Mark as preview polygon
-          })
-          fabricCanvas.add(polygon)
-          fabricCanvas.renderAll()
+          });
+          fabricCanvas.add(polygon);
+          fabricCanvas.requestRenderAll(); // Use requestRenderAll for better performance
         }
       } else if (currentTool === "textTool") {
         const text = new window.fabric.IText("Type here", {
@@ -612,21 +853,27 @@ class MountainPointCloud {
           top: pointer.y,
           fontSize: 20,
           selectable: true,
-        })
-        fabricCanvas.add(text)
-        fabricCanvas.setActiveObject(text)
-        text.enterEditing()
+        });
+        fabricCanvas.add(text);
+        fabricCanvas.setActiveObject(text);
+        text.enterEditing();
+        fabricCanvas.requestRenderAll();
+      } else if (currentTool === "dragTool" && !opt.target) {
+        isPanning = true;
+        fabricCanvas.selection = false;
+        lastPosX = opt.e.clientX;
+        lastPosY = opt.e.clientY;
       }
-    })
+    });
 
-    // Double click to finish polygon
+    // Double click to finish polygon - optimized
     fabricCanvas.on("mouse:dblclick", () => {
       if (currentTool === "polygonTool" && isDrawingPolygon && polygonPoints.length > 2) {
-        isDrawingPolygon = false
+        isDrawingPolygon = false;
 
         // Remove the preview polygon
         if (fabricCanvas._objects.length > 0 && fabricCanvas._objects[fabricCanvas._objects.length - 1]._polyPoints) {
-          fabricCanvas.remove(fabricCanvas._objects[fabricCanvas._objects.length - 1])
+          fabricCanvas.remove(fabricCanvas._objects[fabricCanvas._objects.length - 1]);
         }
 
         // Create the final polygon
@@ -636,94 +883,121 @@ class MountainPointCloud {
           strokeWidth: 2,
           selectable: true,
           evented: true,
-        })
-        fabricCanvas.add(polygon)
-        fabricCanvas.renderAll()
-        polygonPoints = []
+        });
+        fabricCanvas.add(polygon);
+        fabricCanvas.requestRenderAll();
+        polygonPoints = [];
       }
-    })
+    });
 
-    // File upload handler
-    document.getElementById("fileUpload").onchange = (e) => {
-      const file = e.target.files[0]
-      const reader = new FileReader()
-
-      reader.onload = (event) => {
-        const imgObj = new Image()
-        imgObj.src = event.target.result
-        imgObj.onload = () => {
-          const image = new window.fabric.Image(imgObj, {
-            left: 100,
-            top: 100,
-            scaleX: 0.5,
-            scaleY: 0.5,
-          })
-          fabricCanvas.add(image)
-          fabricCanvas.renderAll()
-        }
-      }
-      reader.readAsDataURL(file)
-    }
-
-    // Pan handling
-    let isPanning = false
-    let lastPosX
-    let lastPosY
-
-    fabricCanvas.on("mouse:down", (opt) => {
-      if (currentTool === "dragTool" && !opt.target) {
-        isPanning = true
-        fabricCanvas.selection = false
-        lastPosX = opt.e.clientX
-        lastPosY = opt.e.clientY
-      }
-    })
-
+    // Optimized mouse move handler with throttling
+    let lastMoveTime = 0;
     fabricCanvas.on("mouse:move", (opt) => {
+      const now = performance.now();
+      if (now - lastMoveTime < 16) return; // Limit to ~60fps
+      lastMoveTime = now;
+      
       if (isPanning && currentTool === "dragTool") {
-        const deltaX = opt.e.clientX - lastPosX
-        const deltaY = opt.e.clientY - lastPosY
+        const deltaX = opt.e.clientX - lastPosX;
+        const deltaY = opt.e.clientY - lastPosY;
 
-        fabricCanvas.relativePan(new window.fabric.Point(deltaX, deltaY))
+        // Limit pan speed for smoother movement
+        const maxDelta = 20;
+        const limitedDeltaX = Math.min(Math.max(-maxDelta, deltaX), maxDelta);
+        const limitedDeltaY = Math.min(Math.max(-maxDelta, deltaY), maxDelta);
 
-        lastPosX = opt.e.clientX
-        lastPosY = opt.e.clientY
+        fabricCanvas.relativePan(new window.fabric.Point(limitedDeltaX, limitedDeltaY));
+
+        lastPosX = opt.e.clientX;
+        lastPosY = opt.e.clientY;
       }
-    })
+    });
 
     fabricCanvas.on("mouse:up", () => {
-      isPanning = false
+      isPanning = false;
       if (currentTool === "dragTool") {
-        fabricCanvas.selection = true
+        fabricCanvas.selection = true;
       }
-    })
+    });
 
-    // Pen tool (freehand drawing)
-    fabricCanvas.freeDrawingBrush.width = 2
-    fabricCanvas.freeDrawingBrush.color = "#000000"
+    // File upload handler - optimized
+    const fileUpload = document.getElementById("fileUpload");
+    if (fileUpload) {
+      fileUpload.onchange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const imgObj = new Image();
+          imgObj.src = event.target.result;
+          imgObj.onload = () => {
+            // Scale image down if it's too large
+            let scale = 1;
+            const maxDimension = 1000;
+            if (imgObj.width > maxDimension || imgObj.height > maxDimension) {
+              scale = maxDimension / Math.max(imgObj.width, imgObj.height);
+            }
+            
+            const image = new window.fabric.Image(imgObj, {
+              left: 100,
+              top: 100,
+              scaleX: scale * 0.5,
+              scaleY: scale * 0.5,
+            });
+            fabricCanvas.add(image);
+            fabricCanvas.requestRenderAll();
+          };
+        };
+        reader.readAsDataURL(file);
+      };
+    }
 
-    // Window resize handler
-    window.addEventListener("resize", () => {
-      fabricCanvas.setWidth(window.innerWidth)
-      fabricCanvas.setHeight(window.innerHeight)
-      fabricCanvas.renderAll()
-    })
+    // Pen tool (freehand drawing) - optimized
+    fabricCanvas.freeDrawingBrush.width = 2;
+    fabricCanvas.freeDrawingBrush.color = "#000000";
+    fabricCanvas.freeDrawingBrush.limitedToCanvasSize = true;
   }
 
   onWindowResize() {
-    this.camera.aspect = window.innerWidth / window.innerHeight
-    this.camera.updateProjectionMatrix()
-    this.renderer.setSize(window.innerWidth, window.innerHeight)
+    // Throttle resize events for better performance
+    if (this._resizeThrottleTimeout) return;
+    this._resizeThrottleTimeout = setTimeout(() => {
+      this._resizeThrottleTimeout = null;
+      
+      this.camera.aspect = window.innerWidth / window.innerHeight;
+      this.camera.updateProjectionMatrix();
+      this.renderer.setSize(window.innerWidth, window.innerHeight);
+    }, 100);
   }
 
   animate() {
-    requestAnimationFrame(() => this.animate())
-    TWEEN.update()
-    this.controls.update()
-    this.renderer.render(this.scene, this.camera)
+    // Use requestAnimationFrame for smooth animation
+    requestAnimationFrame(() => this.animate());
+    
+    // Throttle rendering for better performance
+    const now = performance.now();
+    const elapsed = now - this.lastRenderTime;
+    
+    if (elapsed > this.renderInterval) {
+      this.lastRenderTime = now - (elapsed % this.renderInterval);
+      
+      // Update TWEEN animations
+      TWEEN.update();
+      
+      // Update camera using the camera controller logic
+      this.updateCamera();
+      
+      // Apply rotation to the point cloud
+      if (this.isRotating && this.pointCloud) {
+        this.pointCloud.rotation.y += this.rotationSpeed;
+      }
+      
+      // Render the scene
+      this.renderer.render(this.scene, this.camera);
+    }
   }
 }
 
-const mountainPointCloud = new MountainPointCloud()
-mountainPointCloud.init()
-
+const mountainPointCloud = new MountainPointCloud();
+mountainPointCloud.init();
