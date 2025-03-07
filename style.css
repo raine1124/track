@@ -77,6 +77,13 @@ body {
     object-fit: cover;
     object-position: 100% center;
 }
+
+/* Special handling for brain image */
+#image-track > .image-container > .image[src*="brain.png"] {
+    object-fit: contain;
+    background-color: black;
+    object-position: 100% center;
+}
   
 .view-button {
     position: relative;
