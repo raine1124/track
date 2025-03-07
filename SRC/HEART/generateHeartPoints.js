@@ -11,24 +11,23 @@ function createHeartShape(t, u, scale = 1) {
 function createHeartColor(position, noise) {
   // Softer color palette with reds, pinks, and purples
   const colors = [
-  
-  
     new THREE.Color(0x8B0000), // red
-   
-
   ]
-
   // Use position to create smooth color transitions
   const colorIndex = Math.floor((Math.sin(position.x * 3 + position.y * 2) + 1) * (colors.length / 2))
-
   const baseColor = colors[colorIndex % colors.length].clone()
-
+  
+  // ADD YOUR BRIGHTNESS INCREASE CODE HERE
+  // Increase brightness by a factor
+  baseColor.r = Math.min(1.0, baseColor.r * 1.5);
+  baseColor.g = Math.min(1.0, baseColor.g * 1.5);
+  baseColor.b = Math.min(1.0, baseColor.b * 1.5);
+  
   // Add subtle variation
   const variation = 0.1
   baseColor.r += (Math.random() - 0.5) * variation
   baseColor.g += (Math.random() - 0.5) * variation
   baseColor.b += (Math.random() - 0.5) * variation
-
   return baseColor
 }
 
