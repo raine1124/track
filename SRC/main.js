@@ -124,7 +124,7 @@ window.addEventListener('pageshow', (event) => {
 // Add a specific fix for the brain image
 window.addEventListener('load', () => {
     // Ensure the brain image is properly displayed
-    const brainImage = document.querySelector('img[src*="Brain2.png"]');
+    const brainImage = document.querySelector('img[src*="brain.png"]');
     if (brainImage) {
         brainImage.style.display = 'block';
         brainImage.style.opacity = '1';
