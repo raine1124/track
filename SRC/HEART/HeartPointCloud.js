@@ -9,7 +9,7 @@ let animationFrame
 // Camera controller variables
 let currentPosition = new THREE.Vector3()
 let target = new THREE.Vector3()
-let initialPosition = new THREE.Vector3(0, 0, 8)
+let initialPosition = new THREE.Vector3(0, 0, 5)
 let initialTarget = new THREE.Vector3(0, 0, 0)
 let pitch = 0
 let yaw = 0
