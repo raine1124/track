@@ -61,6 +61,8 @@ body {
   top: 50%;
   transform: translate(0%, -50%); 
   user-select: none;
+  /* Add this to keep the track together */
+  white-space: nowrap;
 }
 
 .image-container {
@@ -69,7 +71,9 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 1vmin;
-  overflow: hidden; /* Add this to contain the image */
+  overflow: hidden;
+  /* Make sure this doesn't change */
+  flex-shrink: 0;
 }
 
 #image-track > .image-container > .image {
