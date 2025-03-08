@@ -80,13 +80,6 @@ body {
   transition: transform 1200ms ease;
 }
 
-/* Special handling for brain image */
-#image-track > .image-container > .image[src*="Brain2.png"] {
-  object-fit: contain;
-  background-color: black;
-  transition: transform 1200ms ease;
-}
-
 .view-button {
   position: relative;
   background: radial-gradient(circle at center, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0.8) 100%);
