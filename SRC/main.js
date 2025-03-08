@@ -94,22 +94,13 @@ const handleOnMove = e => {
   
   track.dataset.percentage = nextPercentage;
   
-  // Track animation - using a very short duration for immediate response
+  // Apply transform only to the track, not individual images
   track.animate({
-      transform: `translate(${nextPercentage}%, -50%)`
+    transform: `translate(${nextPercentage}%, -50%)`
   }, { duration: 800, fill: "forwards" });
   
-  // Image animation - also using a very short duration
-  for(const image of track.getElementsByClassName("image")) {
-      // Calculate a parallax effect - images move at a different rate than the track
-      const parallaxFactor = 0.5; // Adjust this value to control the parallax effect
-      const imageTranslate = nextPercentage * parallaxFactor;
-      
-      // Use the Web Animation API for smooth animation during drag
-      image.animate({
-          transform: `translateX(${imageTranslate}%)`
-      }, { duration: 800, fill: "forwards" });
-  }
+  // Remove the image animation part or replace with a non-translating effect
+  // if you want a different effect on images
 }
 
 // Add a function to handle page navigation
